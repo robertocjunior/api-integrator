@@ -110,6 +110,7 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-dark">
                             <li><a class="dropdown-item" href="#" @click="addStep('request')"><i class="fas fa-globe me-2"></i>{{ t.toolbar.req_http }}</a></li>
+                            <li><a class="dropdown-item" href="#" @click="addStep('manipulation')"><i class="fas fa-magic me-2"></i>{{ t.toolbar.manipulation }}</a></li>
                             <li><a class="dropdown-item" href="#" @click="addStep('sankhya')"><i class="fas fa-database me-2"></i>Integração Sankhya</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="#" @click="addStep('wait')"><i class="fas fa-clock me-2"></i>{{ t.toolbar.wait }}</a></li>
@@ -238,6 +239,78 @@
                                             <json-tree :data="step.lastResponse.data" path="" @select-path="(path, val) => addExtraction(step, path, val)"></json-tree>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div v-if="step.type === 'manipulation'">
+                                <div v-for="(op, i) in step.operations" :key="i" class="border border-secondary rounded p-2 mb-2 bg-black">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="badge bg-secondary">{{ t.block.ops[op.type] || op.type }}</span>
+                                        <button class="btn btn-sm text-danger p-0" @click="step.operations.splice(i, 1)"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                    
+                                    <div class="row g-2">
+                                        <div class="col-4">
+                                            <label class="form-label small text-success">{{ t.block.manipulation_output }}</label>
+                                            <input type="text" class="form-control form-control-sm bg-dark text-success border-secondary text-uppercase" v-model="op.outputVar" placeholder="NOVA_VAR">
+                                        </div>
+                                        
+                                        <div class="col-8">
+                                            <label class="form-label small">{{ t.block.manipulation_input }}</label>
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                                                v-model="op.input" 
+                                                placeholder="{{VARIAVEL}}"
+                                                @contextmenu="showCtxMenu($event, 'op-input', op)">
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-2 ps-2 border-start border-info">
+                                        
+                                        <div v-if="op.type === 'replace'" class="row g-2">
+                                            <div class="col-6"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.find" placeholder="Buscar (ex: ISCA)"></div>
+                                            <div class="col-6"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.replace" placeholder="Substituir por..."></div>
+                                        </div>
+
+                                        <div v-if="op.type === 'map'">
+                                            <div class="d-flex gap-2 mb-1" v-for="(to, from) in op.map" :key="from">
+                                                <input type="text" class="form-control form-control-sm bg-dark text-light" :value="from" readonly>
+                                                <i class="fas fa-arrow-right align-self-center"></i>
+                                                <input type="text" class="form-control form-control-sm bg-dark text-light" v-model="op.map[from]">
+                                                <button class="btn btn-sm text-danger" @click="delete op.map[from]">x</button>
+                                            </div>
+                                            <div class="input-group input-group-sm mb-1">
+                                                <input type="text" class="form-control bg-dark text-light" placeholder="De (ex: true)" v-model="op.tempFrom">
+                                                <input type="text" class="form-control bg-dark text-light" placeholder="Para (ex: S)" v-model="op.tempTo">
+                                                <button class="btn btn-outline-secondary" @click="if(op.tempFrom){ op.map[op.tempFrom] = op.tempTo; op.tempFrom=''; op.tempTo=''; }">+</button>
+                                            </div>
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light mt-1" v-model="op.mapDefault" placeholder="Valor Padrão (caso não encontre)">
+                                        </div>
+
+                                        <div v-if="op.type === 'format'">
+                                            <select class="form-select form-select-sm bg-dark text-light border-secondary" v-model="op.formatType">
+                                                <option value="upper">MAIÚSCULAS</option>
+                                                <option value="lower">minúsculas</option>
+                                                <option value="trim">Remover Espaços (Trim)</option>
+                                                <option value="number">Converter para Número</option>
+                                            </select>
+                                        </div>
+
+                                        <div v-if="op.type === 'math'">
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light" v-model="op.formula" placeholder="Fórmula: x * 1.6 (x é o valor de entrada)">
+                                        </div>
+
+                                    </div>
+                                </div>
+
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-info dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">{{ t.block.manipulation_add }}</button>
+                                    <ul class="dropdown-menu dropdown-menu-dark w-100">
+                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'template')">{{ t.block.ops.template }}</a></li>
+                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'replace')">{{ t.block.ops.replace }}</a></li>
+                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'map')">{{ t.block.ops.map }}</a></li>
+                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'format')">{{ t.block.ops.format }}</a></li>
+                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'math')">{{ t.block.ops.math }}</a></li>
+                                    </ul>
                                 </div>
                             </div>
 

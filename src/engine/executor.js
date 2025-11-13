@@ -8,7 +8,6 @@ import { executeSankhyaRequest } from '../services/sankhyaService.js';
 export function resolveVariables(target, context) {
     if (typeof target === 'string') {
         return target.replace(/\{\{([\w_]+)\}\}/g, (_, key) => {
-            // Se o valor no contexto for undefined, mantém a tag {{VAR}}
             return context[key] !== undefined ? context[key] : `{{${key}}}`;
         });
     }
@@ -26,18 +25,15 @@ export function resolveVariables(target, context) {
 }
 
 /**
- * Processa um único passo de REQUEST.
- * Suporta extração de listas (Arrays) para uso em Batch.
+ * Processa Requisição HTTP
  */
 export async function processRequestStep(step, context) {
-    // 1. Verifica se o Body está HABILITADO
     const isBodyEnabled = step.bodyEnabled !== false; 
     let dataPayload = null;
     if (isBodyEnabled && step.body && Object.keys(step.body).length > 0) {
         dataPayload = step.body;
     }
 
-    // 2. Resolve variáveis
     const config = resolveVariables({
         method: step.method,
         url: step.url,
@@ -45,47 +41,27 @@ export async function processRequestStep(step, context) {
         data: dataPayload
     }, context);
 
-    // 3. Limpeza para GET
     if (config.method === 'GET' || config.method === 'HEAD') {
         delete config.data;
     }
 
-    // 4. Timeout
     const timeoutMs = parseInt(step.timeout) || 30000;
-
-    // 5. Executa
     const response = await axios({ ...config, timeout: timeoutMs });
 
-    // 6. Extração de Variáveis (com suporte a Listas)
     if (step.extracts && Array.isArray(step.extracts)) {
         step.extracts.forEach(ext => {
             const rawVal = _.get(response.data, ext.path);
-            
-            // Lógica de Lista (Array)
             if (ext.isList) {
-                // Se o valor extraído já é um array, salva direto
                 if (Array.isArray(rawVal)) {
                     context[ext.variableName] = rawVal;
                 } else {
-                    // Se pegou um item solto (ex: data[0].id), tenta descobrir o array pai
                     const arrayPathMatch = ext.path.match(/^(.*)\[\d+\](\..+)?$/);
-                    
                     if (arrayPathMatch) {
-                        const rootArrayPath = arrayPathMatch[1]; // ex: "posicoes"
-                        const itemPropPath = arrayPathMatch[2] ? arrayPathMatch[2].substring(1) : null; // ex: "cveiPlaca"
-                        
-                        const rootArray = _.get(response.data, rootArrayPath);
-                        
+                        const rootArray = _.get(response.data, arrayPathMatch[1]);
+                        const prop = arrayPathMatch[2] ? arrayPathMatch[2].substring(1) : null;
                         if (Array.isArray(rootArray)) {
-                            if (itemPropPath) {
-                                // Mapeia a propriedade de cada item (ex: todas as placas)
-                                context[ext.variableName] = rootArray.map(item => _.get(item, itemPropPath));
-                            } else {
-                                // Array de primitivos
-                                context[ext.variableName] = rootArray; 
-                            }
+                            context[ext.variableName] = prop ? rootArray.map(i => _.get(i, prop)) : rootArray;
                         } else {
-                            // Fallback: salva como array de 1 item se falhar a detecção
                             context[ext.variableName] = [rawVal];
                         }
                     } else {
@@ -93,19 +69,104 @@ export async function processRequestStep(step, context) {
                     }
                 }
             } else {
-                // Valor Simples
-                if (rawVal !== undefined) {
-                    context[ext.variableName] = rawVal;
-                }
+                if (rawVal !== undefined) context[ext.variableName] = rawVal;
             }
         });
     }
-
     return response;
 }
 
 /**
- * Executa um fluxo completo
+ * Processa Manipulação de Dados
+ */
+export function processManipulationStep(step, context) {
+    if (!step.operations || !Array.isArray(step.operations)) return;
+
+    step.operations.forEach(op => {
+        try {
+            // 1. Resolve o valor de entrada (ex: "{{NOME}}")
+            let inputVal = resolveVariables(op.input, context);
+            let result = inputVal;
+
+            // Se o input for um Array (extraído como lista), aplicamos a operação em CADA item
+            // Caso contrário, aplicamos no valor único
+            const isArrayInput = Array.isArray(inputVal);
+            const applyOp = (val) => {
+                let processed = val;
+                
+                switch (op.type) {
+                    case 'replace':
+                        if (typeof processed === 'string') {
+                            // Replace simples (case sensitive)
+                            processed = processed.split(op.find).join(op.replace || '');
+                        }
+                        break;
+                    
+                    case 'map':
+                        // De/Para (ex: "true" -> "S")
+                        // Converte para string para garantir chaveamento
+                        const key = String(processed);
+                        if (op.map && op.map[key] !== undefined) {
+                            processed = op.map[key];
+                        } else if (op.mapDefault !== undefined && op.mapDefault !== '') {
+                            processed = op.mapDefault;
+                        }
+                        break;
+
+                    case 'format':
+                        if (typeof processed === 'string') {
+                            if (op.formatType === 'upper') processed = processed.toUpperCase();
+                            if (op.formatType === 'lower') processed = processed.toLowerCase();
+                            if (op.formatType === 'trim') processed = processed.trim();
+                            if (op.formatType === 'number') processed = parseFloat(processed) || 0;
+                        }
+                        break;
+
+                    case 'math':
+                        // Cuidado com eval, mas útil para contas simples
+                        // Remove caracteres perigosos, aceita apenas numeros e operadores
+                        try {
+                            // Tenta converter para numero primeiro
+                            const num = parseFloat(processed);
+                            if (!isNaN(num)) {
+                                // Ex: input é 100. Formula: "x * 2"
+                                // Substituimos 'x' pelo valor
+                                const formula = op.formula.toLowerCase().replace(/x/g, num);
+                                // Validação simples de segurança
+                                if (/^[\d\.\s\+\-\*\/\(\)]+$/.test(formula)) {
+                                    processed = eval(formula);
+                                }
+                            }
+                        } catch(e) {}
+                        break;
+                    
+                    case 'template':
+                    default:
+                        // Template já é resolvido pelo resolveVariables no início
+                        break;
+                }
+                return processed;
+            };
+
+            if (isArrayInput) {
+                result = inputVal.map(item => applyOp(item));
+            } else {
+                result = applyOp(inputVal);
+            }
+
+            // Salva no contexto
+            if (op.outputVar) {
+                context[op.outputVar.toUpperCase()] = result;
+            }
+
+        } catch (err) {
+            console.error(`Erro na manipulação [${op.type}]:`, err.message);
+        }
+    });
+}
+
+/**
+ * Executa Fluxo
  */
 export async function executeFlow(flow, io) {
     const context = {}; 
@@ -117,71 +178,57 @@ export async function executeFlow(flow, io) {
         for (const step of flow.steps) {
             io.emit('flow-status', { id: flow.id, status: 'running', step: step.id });
 
-            // --- REQUEST ---
             if (step.type === 'request') {
                 await processRequestStep(step, context);
             } 
-            
-            // --- WAIT ---
             else if (step.type === 'wait') {
                 const ms = parseInt(step.delay) || 1000;
                 await new Promise(resolve => setTimeout(resolve, ms));
             }
-
-            // --- SANKHYA (INSERT/SELECT) ---
+            // --- MANIPULATION ---
+            else if (step.type === 'manipulation') {
+                processManipulationStep(step, context);
+            }
+            // --- SANKHYA ---
             else if (step.type === 'sankhya') {
-                
+                // ... (Código Sankhya mantido igual ao anterior) ...
                 if (step.operation === 'insert') {
                     const rawMapping = step.mapping;
                     const finalRecords = [];
                     let maxRows = 1;
-
-                    // 1. Avaliar Mapeamento e Detectar Arrays
                     const evaluatedMapping = {};
                     
                     for (const key in rawMapping) {
                         const valPattern = rawMapping[key];
-                        
-                        // Verifica se é variável pura: "{{VAR}}"
                         const match = typeof valPattern === 'string' ? valPattern.match(/^\{\{([\w_]+)\}\}$/) : null;
                         
                         if (match) {
                             const varName = match[1];
                             const ctxVal = context[varName];
-                            
                             if (Array.isArray(ctxVal)) {
-                                evaluatedMapping[key] = ctxVal; // É uma lista de valores
+                                evaluatedMapping[key] = ctxVal;
                                 if (ctxVal.length > maxRows) maxRows = ctxVal.length;
                             } else {
-                                evaluatedMapping[key] = ctxVal; // Valor único
+                                evaluatedMapping[key] = ctxVal;
                             }
                         } else {
-                            // Resolve variáveis dentro de string (ex: "Fixo {{VAR}}")
                             evaluatedMapping[key] = resolveVariables(valPattern, context);
                         }
                     }
 
-                    // 2. Pivotar Dados (Transformar colunas de arrays em linhas de registros)
                     const orderedFields = Object.keys(rawMapping);
-
                     for (let i = 0; i < maxRows; i++) {
                         const recordValues = {};
-                        
                         orderedFields.forEach((fieldName, idx) => {
                             const valOrArray = evaluatedMapping[fieldName];
                             let finalVal;
-
                             if (Array.isArray(valOrArray)) {
-                                // Pega o item do índice atual, ou o último (se array menor), ou null
                                 finalVal = valOrArray[i] !== undefined ? valOrArray[i] : (valOrArray.length === 1 ? valOrArray[0] : null);
                             } else {
                                 finalVal = valOrArray;
                             }
-                            
-                            // O Sankhya espera chaves como string numérica ("0", "1", "2") baseada na ordem dos fields
                             recordValues[idx.toString()] = finalVal;
                         });
-
                         finalRecords.push({ values: recordValues });
                     }
 
@@ -192,11 +239,8 @@ export async function executeFlow(flow, io) {
                         fields: orderedFields,
                         records: finalRecords
                     };
-
-                    console.log(`${logPrefix} Inserindo ${finalRecords.length} registros no Sankhya...`);
                     await executeSankhyaRequest('DatasetSP.save', requestBody);
-                }
-                else if (step.operation === 'select') {
+                } else if (step.operation === 'select') {
                     const resolvedSql = resolveVariables(step.sql, context);
                     await executeSankhyaRequest('DbExplorerSP.executeQuery', {
                         sql: resolvedSql,
@@ -205,9 +249,7 @@ export async function executeFlow(flow, io) {
                 }
             }
         }
-
         io.emit('flow-status', { id: flow.id, status: 'idle', lastRun: new Date() });
-
     } catch (error) {
         const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
         console.error(`${logPrefix} Erro: ${errMsg}`);
