@@ -55,7 +55,7 @@
             </div>
 
             <div v-if="view === 'settings'" class="text-muted small mt-2">
-                Configure as credenciais do ERP Sankhya.
+                Configure as credenciais do ERP Sankhya aqui para usar nos blocos de integração.
             </div>
         </div>
 
@@ -224,7 +224,6 @@
                                             <h6>{{ t.block.saved_vars }}</h6>
                                             <div v-for="(ext, i) in step.extracts" :key="i" class="d-flex align-items-center bg-dark border border-secondary p-1 rounded mb-1">
                                                 <span v-if="ext.isList" class="badge bg-warning text-dark me-2" title="Lista (Array)">[ ]</span>
-                                                
                                                 <span class="var-badge">{{ ext.variableName }}</span>
                                                 <small class="text-muted me-auto">← {{ ext.path }}</small>
                                                 <button class="btn btn-sm text-danger" @click="step.extracts.splice(i, 1)">×</button>
@@ -243,73 +242,88 @@
                             </div>
 
                             <div v-if="step.type === 'manipulation'">
-                                <div v-for="(op, i) in step.operations" :key="i" class="border border-secondary rounded p-2 mb-2 bg-black">
-                                    <div class="d-flex justify-content-between mb-2">
-                                        <span class="badge bg-secondary">{{ t.block.ops[op.type] || op.type }}</span>
-                                        <button class="btn btn-sm text-danger p-0" @click="step.operations.splice(i, 1)"><i class="fas fa-trash"></i></button>
+                                <div v-if="step.operations.length === 0" class="text-center p-4 border border-secondary border-dashed rounded mb-3 text-muted">
+                                    <i class="fas fa-magic mb-2" style="font-size: 1.5em;"></i><br>Nenhuma regra criada.
+                                </div>
+
+                                <div v-for="(op, i) in step.operations" :key="i" class="manipulation-card">
+                                    
+                                    <div class="manipulation-header">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-warning text-dark fw-bold">{{ i + 1 }}</span>
+                                            <div class="manipulation-badge">
+                                                <i v-if="op.type === 'template'" class="fas fa-quote-right text-info"></i>
+                                                <i v-if="op.type === 'replace'" class="fas fa-exchange-alt text-warning"></i>
+                                                <i v-if="op.type === 'map'" class="fas fa-map-signs text-success"></i>
+                                                <i v-if="op.type === 'format'" class="fas fa-text-height text-primary"></i>
+                                                <i v-if="op.type === 'math'" class="fas fa-calculator text-danger"></i>
+                                                <span>{{ t.block.ops[op.type] || op.type }}</span>
+                                            </div>
+                                        </div>
+                                        <button class="btn btn-sm btn-dark text-danger border-0" @click="step.operations.splice(i, 1)"><i class="fas fa-trash"></i></button>
                                     </div>
                                     
-                                    <div class="row g-2">
-                                        <div class="col-4">
-                                            <label class="form-label small text-success">{{ t.block.manipulation_output }}</label>
-                                            <input type="text" class="form-control form-control-sm bg-dark text-success border-secondary text-uppercase" v-model="op.outputVar" placeholder="NOVA_VAR">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-md-4">
+                                            <label class="manipulation-label text-success"><i class="fas fa-download me-1"></i> {{ t.block.manipulation_output }}</label>
+                                            <input type="text" class="form-control form-control-sm input-var-output" v-model="op.outputVar" placeholder="NOVA_VAR">
                                         </div>
                                         
-                                        <div class="col-8">
-                                            <label class="form-label small">{{ t.block.manipulation_input }}</label>
-                                            <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" 
-                                                v-model="op.input" 
-                                                placeholder="{{VARIAVEL}}"
-                                                @contextmenu="showCtxMenu($event, 'op-input', op)">
+                                        <div class="col-md-8">
+                                            <label class="manipulation-label text-info"><i class="fas fa-code me-1"></i> {{ t.block.manipulation_input }}</label>
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" class="form-control form-control-sm input-expression" v-model="op.input" placeholder="{{RUA}}, {{NUMERO}}" @contextmenu="showCtxMenu($event, 'op-input', op)">
+                                                <button class="btn btn-outline-secondary btn-sm" type="button" @click="showCtxMenu($event, 'op-input', op)"><i class="fas fa-plus"></i></button>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div class="mt-2 ps-2 border-start border-info">
+                                    <div v-if="['replace', 'map', 'format', 'math'].includes(op.type)" class="mt-3 pt-2 border-top border-secondary">
                                         
-                                        <div v-if="op.type === 'replace'" class="row g-2">
-                                            <div class="col-6"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.find" placeholder="Buscar (ex: ISCA)"></div>
+                                        <div v-if="op.type === 'replace'" class="row g-2 align-items-center">
+                                            <div class="col-5"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.find" placeholder="Texto para buscar"></div>
+                                            <div class="col-1 text-center"><i class="fas fa-arrow-right text-muted"></i></div>
                                             <div class="col-6"><input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.replace" placeholder="Substituir por..."></div>
                                         </div>
 
                                         <div v-if="op.type === 'map'">
                                             <div class="d-flex gap-2 mb-1" v-for="(to, from) in op.map" :key="from">
-                                                <input type="text" class="form-control form-control-sm bg-dark text-light" :value="from" readonly>
-                                                <i class="fas fa-arrow-right align-self-center"></i>
-                                                <input type="text" class="form-control form-control-sm bg-dark text-light" v-model="op.map[from]">
-                                                <button class="btn btn-sm text-danger" @click="delete op.map[from]">x</button>
+                                                <input type="text" class="form-control form-control-sm bg-dark text-warning" :value="from" readonly style="width: 45%">
+                                                <i class="fas fa-arrow-right align-self-center text-muted"></i>
+                                                <input type="text" class="form-control form-control-sm bg-dark text-success" v-model="op.map[from]" style="width: 45%">
+                                                <button class="btn btn-sm text-danger" @click="delete op.map[from]"><i class="fas fa-times"></i></button>
                                             </div>
-                                            <div class="input-group input-group-sm mb-1">
-                                                <input type="text" class="form-control bg-dark text-light" placeholder="De (ex: true)" v-model="op.tempFrom">
-                                                <input type="text" class="form-control bg-dark text-light" placeholder="Para (ex: S)" v-model="op.tempTo">
-                                                <button class="btn btn-outline-secondary" @click="if(op.tempFrom){ op.map[op.tempFrom] = op.tempTo; op.tempFrom=''; op.tempTo=''; }">+</button>
+                                            <div class="input-group input-group-sm mb-2">
+                                                <input type="text" class="form-control bg-dark text-light" placeholder="Recebe" v-model="op.tempFrom">
+                                                <input type="text" class="form-control bg-dark text-light" placeholder="Vira" v-model="op.tempTo">
+                                                <button class="btn btn-outline-secondary" @click="if(op.tempFrom){ op.map[op.tempFrom] = op.tempTo; op.tempFrom=''; op.tempTo=''; }">Adicionar</button>
                                             </div>
-                                            <input type="text" class="form-control form-control-sm bg-dark text-light mt-1" v-model="op.mapDefault" placeholder="Valor Padrão (caso não encontre)">
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light mt-1" v-model="op.mapDefault" placeholder="Valor Padrão">
                                         </div>
 
                                         <div v-if="op.type === 'format'">
-                                            <select class="form-select form-select-sm bg-dark text-light border-secondary" v-model="op.formatType">
-                                                <option value="upper">MAIÚSCULAS</option>
-                                                <option value="lower">minúsculas</option>
+                                            <select class="form-select form-select-sm bg-dark text-light border-secondary w-50" v-model="op.formatType">
+                                                <option value="upper">TUDO MAIÚSCULO</option>
+                                                <option value="lower">tudo minúsculo</option>
                                                 <option value="trim">Remover Espaços (Trim)</option>
-                                                <option value="number">Converter para Número</option>
+                                                <option value="number">Converter Texto em Número</option>
                                             </select>
                                         </div>
 
                                         <div v-if="op.type === 'math'">
-                                            <input type="text" class="form-control form-control-sm bg-dark text-light" v-model="op.formula" placeholder="Fórmula: x * 1.6 (x é o valor de entrada)">
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light font-monospace" v-model="op.formula" placeholder="Fórmula: x * 1.6 (x é o valor)">
                                         </div>
-
                                     </div>
                                 </div>
 
-                                <div class="dropdown">
-                                    <button class="btn btn-sm btn-outline-info dropdown-toggle w-100" type="button" data-bs-toggle="dropdown">{{ t.block.manipulation_add }}</button>
-                                    <ul class="dropdown-menu dropdown-menu-dark w-100">
-                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'template')">{{ t.block.ops.template }}</a></li>
-                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'replace')">{{ t.block.ops.replace }}</a></li>
-                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'map')">{{ t.block.ops.map }}</a></li>
-                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'format')">{{ t.block.ops.format }}</a></li>
-                                        <li><a class="dropdown-item" href="#" @click="addOperation(step, 'math')">{{ t.block.ops.math }}</a></li>
+                                <div class="dropdown mt-3">
+                                    <button class="btn btn-outline-info w-100 dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fas fa-plus-circle me-2"></i>{{ t.block.manipulation_add }}</button>
+                                    <ul class="dropdown-menu dropdown-menu-dark w-100 text-center">
+                                        <li><a class="dropdown-item py-2" href="#" @click="addOperation(step, 'template')"><i class="fas fa-quote-right me-2"></i>{{ t.block.ops.template }}</a></li>
+                                        <li><a class="dropdown-item py-2" href="#" @click="addOperation(step, 'replace')"><i class="fas fa-exchange-alt me-2"></i>{{ t.block.ops.replace }}</a></li>
+                                        <li><a class="dropdown-item py-2" href="#" @click="addOperation(step, 'map')"><i class="fas fa-map-signs me-2"></i>{{ t.block.ops.map }}</a></li>
+                                        <li><a class="dropdown-item py-2" href="#" @click="addOperation(step, 'format')"><i class="fas fa-text-height me-2"></i>{{ t.block.ops.format }}</a></li>
+                                        <li><a class="dropdown-item py-2" href="#" @click="addOperation(step, 'math')"><i class="fas fa-calculator me-2"></i>{{ t.block.ops.math }}</a></li>
                                     </ul>
                                 </div>
                             </div>

@@ -29,6 +29,7 @@ body { background-color: var(--bg-dark); color: #c9d1d9; font-family: 'Segoe UI'
 .json-val { color: #a5d6ff; }
 .var-badge { font-size: 0.8em; background: #d2a8ff; color: #000; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
 
+/* Menu de Contexto */
 .context-menu {
     position: fixed;
     z-index: 9999;
@@ -39,34 +40,28 @@ body { background-color: var(--bg-dark); color: #c9d1d9; font-family: 'Segoe UI'
     min-width: 180px;
     padding: 5px 0;
 }
+.context-menu-item { padding: 8px 15px; cursor: pointer; color: #c9d1d9; display: flex; align-items: center; justify-content: space-between; font-size: 0.9em; }
+.context-menu-item:hover { background-color: #58a6ff; color: #ffffff; }
+.context-menu-divider { height: 1px; background-color: #30363d; margin: 5px 0; }
+.context-menu-header { padding: 5px 15px; font-size: 0.75em; color: #8b949e; text-transform: uppercase; font-weight: bold; pointer-events: none; }
 
-.context-menu-item {
-    padding: 8px 15px;
-    cursor: pointer;
-    color: #c9d1d9;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.9em;
+/* Manipulação */
+.manipulation-card {
+    background-color: #1c2128;
+    border: 1px solid #444c56;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    position: relative;
+    transition: border-color 0.2s;
 }
+.manipulation-card:hover { border-color: #58a6ff; }
+.manipulation-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #30363d; }
+.manipulation-label { font-size: 0.75rem; color: #8b949e; margin-bottom: 4px; display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.input-var-output { background-color: #0d1117; border: 1px solid #238636; color: #3fb950; font-family: monospace; font-weight: bold; text-transform: uppercase; }
+.input-expression { background-color: #0d1117; border: 1px solid #30363d; color: #a5d6ff; font-family: monospace; }
+.manipulation-badge { font-size: 0.8em; padding: 4px 8px; border-radius: 12px; background: #30363d; color: #c9d1d9; display: inline-flex; align-items: center; gap: 5px; }
 
-.context-menu-item:hover {
-    background-color: #58a6ff;
-    color: #ffffff;
-}
-
-.context-menu-divider {
-    height: 1px;
-    background-color: #30363d;
-    margin: 5px 0;
-}
-
-.context-menu-header {
-    padding: 5px 15px;
-    font-size: 0.75em;
-    color: #8b949e;
-    text-transform: uppercase;
-    font-weight: bold;
-    pointer-events: none;
-}
-
+/* Fix altura inputs */
+.manipulation-card .form-control-sm,
+.manipulation-card .input-group-sm .btn { min-height: 31px; height: 31px; }
