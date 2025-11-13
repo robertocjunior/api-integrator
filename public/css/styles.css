@@ -1,0 +1,28 @@
+:root { --bg-dark: #0d1117; --card-bg: #161b22; --border: #30363d; --accent: #238636; }
+body { background-color: var(--bg-dark); color: #c9d1d9; font-family: 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+
+/* Layout */
+.app-container { display: flex; height: 100vh; }
+.sidebar { width: 280px; background: var(--card-bg); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+.flow-canvas { flex: 1; padding: 40px; overflow-y: auto; background-image: radial-gradient(#30363d 1px, transparent 1px); background-size: 20px 20px; display: flex; flex-direction: column; align-items: center; }
+
+/* Blocos */
+.step-card {
+    width: 600px; background: #21262d; border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 20px; position: relative;
+    transition: all 0.2s; cursor: grab;
+}
+.step-card:active { cursor: grabbing; }
+.step-card.active { border-color: #58a6ff; box-shadow: 0 0 15px rgba(88,166,255,0.1); }
+.step-header { padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); border-bottom: 1px solid var(--border); }
+.step-body { padding: 15px; display: none; }
+.step-card.active .step-body { display: block; }
+.connector { width: 2px; height: 20px; background: var(--border); margin: -20px auto 0 auto; z-index: 0; }
+
+/* JSON & Badges */
+.json-tree { font-family: monospace; font-size: 0.85em; max-height: 300px; overflow: auto; background: #000; padding: 10px; border-radius: 4px; }
+.json-key { color: #79c0ff; cursor: pointer; }
+.json-key:hover { text-decoration: underline; background: rgba(88,166,255,0.2); }
+.json-val { color: #a5d6ff; }
+.var-badge { font-size: 0.8em; background: #d2a8ff; color: #000; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
