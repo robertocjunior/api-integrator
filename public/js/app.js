@@ -6,7 +6,6 @@ createApp({
     components: { JsonTree },
     data() {
         return {
-            // Sistema
             currentLang: 'pt-BR',
             texts: languages['pt-BR'],
             view: 'editor', 
@@ -23,15 +22,9 @@ createApp({
             tempVarPath: '',
             tempVarValue: '',
             tempVarName: '',
+            tempVarIsList: false, // Novo campo
 
-            ctxMenu: {
-                visible: false,
-                x: 0, y: 0,
-                targetElement: null,
-                targetStep: null,
-                targetKey: null,
-                targetType: null
-            }
+            ctxMenu: { visible: false, x: 0, y: 0, targetElement: null, targetStep: null, targetKey: null, targetType: null }
         }
     },
     computed: {
@@ -74,33 +67,29 @@ createApp({
         this.varModal = new bootstrap.Modal(document.getElementById('varModal'));
         this.loadFlows();
         this.loadErpConfig();
-        
         const socket = io();
-        socket.on('flow-status', (data) => {
-            this.flowStatus[data.id] = data;
-        });
+        socket.on('flow-status', (data) => { this.flowStatus[data.id] = data; });
     },
     methods: {
         async loadFlows() {
             try {
                 const res = await fetch('/api/flows');
                 this.flows = await res.json() || [];
-                
-                // Normalização: Garante que passos antigos tenham a unidade de tempo definida
                 this.flows.forEach(flow => {
                     if (flow.steps) {
                         flow.steps.forEach(step => {
                             if (step.type === 'request') {
                                 if (!step.timeout) step.timeout = 30000;
                                 if (!step.timeoutUnit) {
-                                    // Se for múltiplo de 60000 (1min), seta como Minutos, senão Segundos
                                     step.timeoutUnit = (step.timeout >= 60000 && step.timeout % 60000 === 0) ? 60000 : 1000;
+                                }
+                                if (step.bodyEnabled === undefined) {
+                                    step.bodyEnabled = (step.method !== 'GET' && step.method !== 'HEAD');
                                 }
                             }
                         });
                     }
                 });
-
                 if (this.flows.length > 0) this.selectFlow(0);
             } catch (e) { console.error(e); this.flows = []; }
         },
@@ -134,17 +123,14 @@ createApp({
                 type: type,
                 name: type === 'sankhya' ? 'Integração Sankhya' : (type === 'request' ? this.t.canvas.step_request : this.t.canvas.step_wait),
                 delay: 1000,
-                
-                // Request
                 method: 'GET',
                 url: '',
-                timeout: 30000, // Default 30s
-                timeoutUnit: 1000, // Default Segundos
+                timeout: 30000,
+                timeoutUnit: 1000,
                 headers: {'Content-Type': 'application/json'},
-                body: {},
+                body: {}, 
+                bodyEnabled: false,
                 extracts: [],
-                
-                // Sankhya
                 operation: 'insert',
                 tableName: '',
                 datasetId: '',
@@ -206,18 +192,13 @@ createApp({
             }
         },
         updateBody(step, val) {
-            // Permite limpar o body
-            if (!val || val.trim() === '') {
-                step.body = {};
-                return;
-            }
-            try { step.body = JSON.parse(val); } catch(e){ /* ignore */ }
+            if (!val || val.trim() === '') { step.body = {}; return; }
+            try { step.body = JSON.parse(val); } catch(e){ }
         },
 
         async runTest(step) {
             step.testLoading = true;
             step.lastResponse = null;
-            
             try {
                 const res = await fetch('/api/test-step', {
                     method: 'POST',
@@ -227,12 +208,9 @@ createApp({
                         targetStepId: step.id 
                     })
                 });
-                
                 const jsonResponse = await res.json();
                 if (!res.ok) throw new Error(jsonResponse.error || 'Erro desconhecido');
-                
                 step.lastResponse = jsonResponse;
-
             } catch (e) {
                 alert(this.t.errors.test_error + e.message);
             } finally {
@@ -245,6 +223,13 @@ createApp({
             this.tempVarPath = path;
             this.tempVarValue = val;
             this.tempVarName = '';
+            this.tempVarIsList = false; // Reset
+            
+            // Auto-detect se é um array ou dentro de um array
+            if (Array.isArray(val) || path.includes('[')) {
+                this.tempVarIsList = true;
+            }
+            
             this.varModal.show();
         },
         confirmExtraction() {
@@ -252,7 +237,8 @@ createApp({
                 if (!this.tempStep.extracts) this.tempStep.extracts = [];
                 this.tempStep.extracts.push({
                     path: this.tempVarPath,
-                    variableName: this.tempVarName.toUpperCase()
+                    variableName: this.tempVarName.toUpperCase(),
+                    isList: this.tempVarIsList // Salva se é lista
                 });
                 this.varModal.hide();
             }
@@ -260,15 +246,7 @@ createApp({
 
         showCtxMenu(event, type, step, key = null) {
             event.preventDefault(); 
-            this.ctxMenu = {
-                visible: true,
-                x: event.clientX,
-                y: event.clientY,
-                targetElement: event.target,
-                targetStep: step,
-                targetKey: key,
-                targetType: type
-            };
+            this.ctxMenu = { visible: true, x: event.clientX, y: event.clientY, targetElement: event.target, targetStep: step, targetKey: key, targetType: type };
             document.addEventListener('click', this.closeCtxMenu, { once: true });
         },
         closeCtxMenu() { this.ctxMenu.visible = false; },
@@ -313,7 +291,7 @@ createApp({
             }
             else if (type === 'header-val') step.headers[key] = val;
             else if (type === 'body') {
-                try { step.body = JSON.parse(val); } catch (e) { /* ignore */ }
+                try { step.body = JSON.parse(val); } catch (e) { }
             }
             else if (type === 'sql') step.sql = val;
             else if (type === 'mapping') step.mapping[key] = val;
