@@ -9,12 +9,8 @@ createApp({
             // Sistema
             currentLang: 'pt-BR',
             texts: languages['pt-BR'],
-            view: 'editor', // 'editor' ou 'settings'
-
-            // Configurações ERP
+            view: 'editor', 
             erpConfig: { baseUrl: '', user: '', password: '' },
-
-            // Lógica de Fluxos
             flows: [],
             currentFlowIndex: -1,
             activeStepId: null,
@@ -22,19 +18,26 @@ createApp({
             saving: false,
             intervalUnit: 1000, 
             
-            // Modal e Variáveis Auxiliares
             varModal: null,
             tempStep: null,
             tempVarPath: '',
             tempVarValue: '',
-            tempVarName: ''
+            tempVarName: '',
+
+            ctxMenu: {
+                visible: false,
+                x: 0, y: 0,
+                targetElement: null,
+                targetStep: null,
+                targetKey: null,
+                targetType: null
+            }
         }
     },
     computed: {
         t() { return this.texts; },
         currentFlow() { return this.flows[this.currentFlowIndex]; },
         
-        // Conversão de tempo (ms <-> unidade)
         displayInterval: {
             get() {
                 if (!this.currentFlow) return 0;
@@ -45,6 +48,17 @@ createApp({
                     this.currentFlow.interval = val * this.intervalUnit;
                 }
             }
+        },
+
+        availableVariables() {
+            if (!this.currentFlow) return [];
+            const vars = new Set();
+            this.currentFlow.steps.forEach(step => {
+                if (step.extracts) {
+                    step.extracts.forEach(ext => vars.add(ext.variableName));
+                }
+            });
+            return Array.from(vars);
         }
     },
     watch: {
@@ -59,7 +73,7 @@ createApp({
     mounted() {
         this.varModal = new bootstrap.Modal(document.getElementById('varModal'));
         this.loadFlows();
-        this.loadErpConfig(); // Carrega config do Sankhya
+        this.loadErpConfig();
         
         const socket = io();
         socket.on('flow-status', (data) => {
@@ -67,11 +81,26 @@ createApp({
         });
     },
     methods: {
-        // --- FLUXOS ---
         async loadFlows() {
             try {
                 const res = await fetch('/api/flows');
                 this.flows = await res.json() || [];
+                
+                // Normalização: Garante que passos antigos tenham a unidade de tempo definida
+                this.flows.forEach(flow => {
+                    if (flow.steps) {
+                        flow.steps.forEach(step => {
+                            if (step.type === 'request') {
+                                if (!step.timeout) step.timeout = 30000;
+                                if (!step.timeoutUnit) {
+                                    // Se for múltiplo de 60000 (1min), seta como Minutos, senão Segundos
+                                    step.timeoutUnit = (step.timeout >= 60000 && step.timeout % 60000 === 0) ? 60000 : 1000;
+                                }
+                            }
+                        });
+                    }
+                });
+
                 if (this.flows.length > 0) this.selectFlow(0);
             } catch (e) { console.error(e); this.flows = []; }
         },
@@ -99,25 +128,23 @@ createApp({
             this.activeStepId = null;
         },
         
-        // --- BLOCOS (STEPS) ---
         addStep(type) {
             const newStep = {
                 id: 'step_' + Date.now(),
                 type: type,
-                // Nome padrão baseado no tipo
                 name: type === 'sankhya' ? 'Integração Sankhya' : (type === 'request' ? this.t.canvas.step_request : this.t.canvas.step_wait),
-                
-                // Propriedades Comuns
                 delay: 1000,
                 
                 // Request
                 method: 'GET',
                 url: '',
+                timeout: 30000, // Default 30s
+                timeoutUnit: 1000, // Default Segundos
                 headers: {'Content-Type': 'application/json'},
                 body: {},
                 extracts: [],
                 
-                // Sankhya Defaults
+                // Sankhya
                 operation: 'insert',
                 tableName: '',
                 datasetId: '',
@@ -141,12 +168,11 @@ createApp({
             return 'bg-secondary';
         },
 
-        // --- CONFIG SANKHYA ---
         async loadErpConfig() {
             try {
                 const res = await fetch('/api/config/sankhya');
                 if (res.ok) this.erpConfig = await res.json();
-            } catch(e) { console.error('Erro config ERP', e); }
+            } catch(e) { /* silent */ }
         },
         async saveErpConfig() {
             try {
@@ -155,32 +181,22 @@ createApp({
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(this.erpConfig)
                 });
-                alert('Configuração salva com sucesso!');
-            } catch(e) { alert('Erro ao salvar config: ' + e.message); }
+                alert('Configuração salva!');
+            } catch(e) { alert('Erro: ' + e.message); }
         },
         async loadSankhyaColumns(step) {
-            if (!step.tableName) return alert('Digite o nome da tabela primeiro.');
-            
+            if (!step.tableName) return alert('Digite o nome da tabela.');
             try {
                 const res = await fetch(`/api/sankhya/columns?tableName=${step.tableName}`);
                 const columns = await res.json();
-                
                 if (columns.error) throw new Error(columns.error);
-
                 if (!step.mapping) step.mapping = {};
-
-                // Adiciona campos se não existirem
                 columns.forEach(col => {
-                    if (step.mapping[col.name] === undefined) {
-                        step.mapping[col.name] = '';
-                    }
+                    if (step.mapping[col.name] === undefined) step.mapping[col.name] = '';
                 });
-            } catch (e) {
-                alert('Erro ao buscar metadados: ' + e.message);
-            }
+            } catch (e) { alert('Erro: ' + e.message); }
         },
 
-        // --- HEADERS / BODY ---
         addHeader(step) { step.headers['New-Header'] = ''; },
         deleteHeader(step, key) { delete step.headers[key]; },
         updateHeaderKey(step, oldKey, newKey) {
@@ -190,27 +206,40 @@ createApp({
             }
         },
         updateBody(step, val) {
-            try { step.body = JSON.parse(val); } catch(e){}
+            // Permite limpar o body
+            if (!val || val.trim() === '') {
+                step.body = {};
+                return;
+            }
+            try { step.body = JSON.parse(val); } catch(e){ /* ignore */ }
         },
 
-        // --- TESTES E EXTRAÇÃO ---
         async runTest(step) {
             step.testLoading = true;
             step.lastResponse = null;
-            const mockContext = {}; 
+            
             try {
                 const res = await fetch('/api/test-step', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ ...step, contextMock: mockContext })
+                    body: JSON.stringify({ 
+                        flow: this.currentFlow, 
+                        targetStepId: step.id 
+                    })
                 });
-                step.lastResponse = await res.json();
+                
+                const jsonResponse = await res.json();
+                if (!res.ok) throw new Error(jsonResponse.error || 'Erro desconhecido');
+                
+                step.lastResponse = jsonResponse;
+
             } catch (e) {
                 alert(this.t.errors.test_error + e.message);
             } finally {
                 step.testLoading = false;
             }
         },
+        
         addExtraction(step, path, val) {
             this.tempStep = step;
             this.tempVarPath = path;
@@ -227,6 +256,67 @@ createApp({
                 });
                 this.varModal.hide();
             }
+        },
+
+        showCtxMenu(event, type, step, key = null) {
+            event.preventDefault(); 
+            this.ctxMenu = {
+                visible: true,
+                x: event.clientX,
+                y: event.clientY,
+                targetElement: event.target,
+                targetStep: step,
+                targetKey: key,
+                targetType: type
+            };
+            document.addEventListener('click', this.closeCtxMenu, { once: true });
+        },
+        closeCtxMenu() { this.ctxMenu.visible = false; },
+        async handleCtxAction(action, payload = null) {
+            const { targetElement, targetStep, targetKey, targetType } = this.ctxMenu;
+            if (!targetElement) return;
+
+            if (action === 'insert_var') {
+                this.insertAtCursor(targetElement, `{{${payload}}}`);
+                this.updateModelFromDOM(targetElement, targetStep, targetType, targetKey);
+            }
+            if (action === 'copy') {
+                const text = targetElement.value.substring(targetElement.selectionStart, targetElement.selectionEnd) || targetElement.value;
+                await navigator.clipboard.writeText(text);
+            }
+            if (action === 'paste') {
+                try {
+                    const text = await navigator.clipboard.readText();
+                    this.insertAtCursor(targetElement, text);
+                    this.updateModelFromDOM(targetElement, targetStep, targetType, targetKey);
+                } catch (err) { alert('Use Ctrl+V'); }
+            }
+            this.closeCtxMenu();
+        },
+        insertAtCursor(input, text) {
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            const originalText = input.value;
+            input.value = originalText.substring(0, start) + text + originalText.substring(end);
+            input.selectionStart = input.selectionEnd = start + text.length;
+            input.focus();
+        },
+        updateModelFromDOM(input, step, type, key) {
+            const val = input.value;
+            if (type === 'url') step.url = val;
+            else if (type === 'header-key') {
+                const oldKey = key;
+                if (oldKey !== val) {
+                    step.headers[val] = step.headers[oldKey];
+                    delete step.headers[oldKey];
+                }
+            }
+            else if (type === 'header-val') step.headers[key] = val;
+            else if (type === 'body') {
+                try { step.body = JSON.parse(val); } catch (e) { /* ignore */ }
+            }
+            else if (type === 'sql') step.sql = val;
+            else if (type === 'mapping') step.mapping[key] = val;
         }
     }
 }).mount('#app');

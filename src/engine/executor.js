@@ -1,8 +1,10 @@
 import axios from 'axios';
 import _ from 'lodash';
-import { executeSankhyaRequest } from '../services/sankhyaService.js'; // IMPORTAR
+import { executeSankhyaRequest } from '../services/sankhyaService.js';
 
-// ... (função resolveVariables mantida igual) ...
+/**
+ * Substitui {{VARIAVEL}} pelo valor real do contexto
+ */
 export function resolveVariables(target, context) {
     if (typeof target === 'string') {
         return target.replace(/\{\{([\w_]+)\}\}/g, (_, key) => {
@@ -22,48 +24,81 @@ export function resolveVariables(target, context) {
     return target;
 }
 
+/**
+ * Processa um único passo de REQUEST.
+ * Usado tanto pelo Job Scheduler quanto pelo Testador na API.
+ */
+export async function processRequestStep(step, context) {
+    // 1. Prepara o Body (se vazio, define null para não quebrar GETs)
+    let dataPayload = null;
+    if (step.body && Object.keys(step.body).length > 0) {
+        dataPayload = step.body;
+    }
+
+    // 2. Resolve variáveis
+    const config = resolveVariables({
+        method: step.method,
+        url: step.url,
+        headers: step.headers || {},
+        data: dataPayload
+    }, context);
+
+    // 3. Limpeza específica para Axios (GET não deve ter 'data')
+    if (config.method === 'GET' || config.method === 'HEAD') {
+        delete config.data;
+    }
+
+    // 4. Timeout configurável (padrão 30s)
+    const timeoutMs = parseInt(step.timeout) || 30000;
+
+    // 5. Executa
+    const response = await axios({ ...config, timeout: timeoutMs });
+
+    // 6. Extração de Variáveis (Marca Texto)
+    if (step.extracts && Array.isArray(step.extracts)) {
+        step.extracts.forEach(ext => {
+            const val = _.get(response.data, ext.path);
+            if (val !== undefined) {
+                context[ext.variableName] = val;
+            }
+        });
+    }
+
+    return response;
+}
+
+/**
+ * Executa um fluxo completo (Loop do Job Agendado)
+ */
 export async function executeFlow(flow, io) {
     const context = {}; 
     const logPrefix = `[${flow.name}]`;
     
-    console.log(`${logPrefix} Iniciando...`);
+    console.log(`${logPrefix} Iniciando ciclo...`);
     io.emit('flow-status', { id: flow.id, status: 'running', step: 'start' });
 
     try {
         for (const step of flow.steps) {
             io.emit('flow-status', { id: flow.id, status: 'running', step: step.id });
 
+            // --- TIPO: REQUEST ---
             if (step.type === 'request') {
-                // ... (Lógica existente de request) ...
-                // Copie a lógica anterior aqui para manter funcionando
-                 const config = resolveVariables({
-                    method: step.method,
-                    url: step.url,
-                    headers: step.headers || {},
-                    data: step.body || null
-                }, context);
-                const response = await axios({ ...config, timeout: 30000 });
-                if (step.extracts && Array.isArray(step.extracts)) {
-                    step.extracts.forEach(ext => {
-                        const val = _.get(response.data, ext.path);
-                        if (val !== undefined) context[ext.variableName] = val;
-                    });
-                }
+                await processRequestStep(step, context);
             } 
+            
+            // --- TIPO: WAIT ---
             else if (step.type === 'wait') {
                 const ms = parseInt(step.delay) || 1000;
                 await new Promise(resolve => setTimeout(resolve, ms));
             }
-            // --- NOVO BLOCO: SANKHYA ---
+
+            // --- TIPO: SANKHYA ---
             else if (step.type === 'sankhya') {
-                console.log(`${logPrefix} Executando Sankhya: ${step.operation}`);
                 
                 if (step.operation === 'insert') {
-                    // 1. Resolver as variáveis no mapeamento
                     const resolvedMapping = resolveVariables(step.mapping, context);
                     
-                    // 2. Preparar vetores para o DatasetSP.save
-                    // O Sankhya exige: fields: ["NOME", "IDADE"] e values: {"0": "Joao", "1": "30"}
+                    // Prepara vetores para o Sankhya (fields vs values)
                     const fieldNames = Object.keys(resolvedMapping);
                     const valuesObj = {};
                     
@@ -72,8 +107,8 @@ export async function executeFlow(flow, io) {
                     });
 
                     const requestBody = {
-                        dataSetID: step.datasetId, // Ex: "01S"
-                        entityName: step.tableName, // Ex: "AD_LOCATCAR"
+                        dataSetID: step.datasetId,
+                        entityName: step.tableName,
                         standAlone: false,
                         fields: fieldNames,
                         records: [{ values: valuesObj }]
@@ -87,6 +122,7 @@ export async function executeFlow(flow, io) {
                         sql: resolvedSql,
                         params: {}
                     });
+                    // TODO: Adicionar extração de variáveis do Select Sankhya futuramente
                 }
             }
         }
@@ -94,7 +130,8 @@ export async function executeFlow(flow, io) {
         io.emit('flow-status', { id: flow.id, status: 'idle', lastRun: new Date() });
 
     } catch (error) {
-        console.error(`${logPrefix} Erro: ${error.message}`);
-        io.emit('flow-status', { id: flow.id, status: 'error', error: error.message });
+        const errMsg = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+        console.error(`${logPrefix} Erro: ${errMsg}`);
+        io.emit('flow-status', { id: flow.id, status: 'error', error: errMsg });
     }
 }

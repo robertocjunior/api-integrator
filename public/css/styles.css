@@ -28,3 +28,44 @@ body { background-color: var(--bg-dark); color: #c9d1d9; font-family: 'Segoe UI'
 .json-key:hover { text-decoration: underline; background: rgba(88,166,255,0.2); }
 .json-val { color: #a5d6ff; }
 .var-badge { font-size: 0.8em; background: #d2a8ff; color: #000; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
+
+.context-menu {
+    position: fixed;
+    z-index: 9999;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    min-width: 180px;
+    padding: 5px 0;
+}
+
+.context-menu-item {
+    padding: 8px 15px;
+    cursor: pointer;
+    color: #c9d1d9;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.9em;
+}
+
+.context-menu-item:hover {
+    background-color: #58a6ff;
+    color: #ffffff;
+}
+
+.context-menu-divider {
+    height: 1px;
+    background-color: #30363d;
+    margin: 5px 0;
+}
+
+.context-menu-header {
+    padding: 5px 15px;
+    font-size: 0.75em;
+    color: #8b949e;
+    text-transform: uppercase;
+    font-weight: bold;
+    pointer-events: none;
+}

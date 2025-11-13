@@ -45,6 +45,12 @@ export default {
         errors: {
             test_error: "Erro ao testar: ",
             token_invalid: "Token inválido"
+        },
+        context_menu: {
+            copy: "Copiar",
+            paste: "Colar",
+            insert_var: "Inserir Variável",
+            no_vars: "Nenhuma variável salva"
         }
     },
     "en-US": {

@@ -44,7 +44,7 @@
                             <span class="fw-bold text-truncate">{{ flow.name }}</span>
                             <span v-if="flowStatus[flow.id]?.status === 'running'" class="spinner-grow spinner-grow-sm text-success"></span>
                         </div>
-                        <small class="text-muted">{{ Math.round(flow.interval/1000) }}s</small>
+                        <small class="text-muted">{{ Math.round((flow.interval || 60000)/1000) }}s</small>
                     </button>
                 </div>
                 
@@ -55,7 +55,7 @@
             </div>
 
             <div v-if="view === 'settings'" class="text-muted small mt-2">
-                Configure as credenciais do ERP Sankhya aqui para usar nos blocos de integração.
+                Configure as credenciais do ERP Sankhya.
             </div>
         </div>
 
@@ -65,19 +65,16 @@
                     <h5 class="mb-0"><i class="fas fa-database me-2"></i>Configuração ERP Sankhya</h5>
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-info small">
-                        <i class="fas fa-info-circle me-1"></i> Estas credenciais são usadas para buscar metadados e autenticar as requisições dos blocos Sankhya.
-                    </div>
                     <div class="mb-3">
                         <label class="form-label">URL Base</label>
-                        <input type="text" class="form-control bg-black text-light border-secondary" v-model="erpConfig.baseUrl" placeholder="ex: http://sankhya.meudominio.com.br">
+                        <input type="text" class="form-control bg-black text-light border-secondary" v-model="erpConfig.baseUrl" placeholder="http://sankhya.dominio.com">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Usuário (NOMUSU)</label>
+                        <label class="form-label">Usuário</label>
                         <input type="text" class="form-control bg-black text-light border-secondary" v-model="erpConfig.user">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Senha (INTERNO)</label>
+                        <label class="form-label">Senha</label>
                         <input type="password" class="form-control bg-black text-light border-secondary" v-model="erpConfig.password">
                     </div>
                     <button class="btn btn-success w-100" @click="saveErpConfig">Salvar Configurações</button>
@@ -158,7 +155,21 @@
                                     <select class="form-select bg-dark text-light" style="max-width: 100px" v-model="step.method">
                                         <option>GET</option><option>POST</option><option>PUT</option>
                                     </select>
-                                    <input type="text" class="form-control bg-dark text-light" v-model="step.url" placeholder="https://api...">
+                                    <input type="text" class="form-control bg-dark text-light" v-model="step.url" placeholder="https://api..." @contextmenu="showCtxMenu($event, 'url', step)">
+                                </div>
+
+                                <div class="d-flex justify-content-end mb-2">
+                                    <div class="input-group input-group-sm w-auto">
+                                        <span class="input-group-text bg-dark text-muted border-secondary">Timeout</span>
+                                        <input type="number" class="form-control bg-dark text-light border-secondary" style="width: 80px" 
+                                               :value="Math.round(step.timeout / (step.timeoutUnit || 1000))"
+                                               @input="step.timeout = $event.target.value * (step.timeoutUnit || 1000)">
+                                        
+                                        <select class="form-select bg-dark text-light border-secondary" style="width: 80px" v-model="step.timeoutUnit">
+                                            <option :value="1000">{{ t.sidebar.unit_sec }}</option>
+                                            <option :value="60000">{{ t.sidebar.unit_min }}</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <ul class="nav nav-tabs border-secondary mb-2">
@@ -170,8 +181,11 @@
                                 <div class="tab-content">
                                     <div class="tab-pane active" :id="'headers-'+step.id">
                                         <div v-for="(val, key) in step.headers" :key="key" class="input-group input-group-sm mb-1">
-                                            <input type="text" class="form-control bg-dark text-light" :value="key" @change="updateHeaderKey(step, key, $event.target.value)">
-                                            <input type="text" class="form-control bg-dark text-light" v-model="step.headers[key]">
+                                            <input type="text" class="form-control bg-dark text-light" :value="key" 
+                                                @change="updateHeaderKey(step, key, $event.target.value)"
+                                                @contextmenu="showCtxMenu($event, 'header-key', step, key)">
+                                            <input type="text" class="form-control bg-dark text-light" v-model="step.headers[key]"
+                                                @contextmenu="showCtxMenu($event, 'header-val', step, key)">
                                             <button class="btn btn-outline-danger" @click="deleteHeader(step, key)">×</button>
                                         </div>
                                         <button class="btn btn-sm btn-outline-secondary" @click="addHeader(step)">{{ t.block.btn_add_header }}</button>
@@ -180,7 +194,8 @@
                                     <div class="tab-pane" :id="'body-'+step.id">
                                         <textarea class="form-control bg-dark text-light font-monospace" rows="4" 
                                             :value="JSON.stringify(step.body, null, 2)"
-                                            @input="updateBody(step, $event.target.value)"></textarea>
+                                            @input="updateBody(step, $event.target.value)"
+                                            @contextmenu="showCtxMenu($event, 'body', step)"></textarea>
                                     </div>
 
                                     <div class="tab-pane" :id="'extract-'+step.id">
@@ -239,11 +254,14 @@
                                     </button>
 
                                     <div v-if="step.mapping && Object.keys(step.mapping).length > 0" class="border border-secondary rounded p-2">
-                                        <h6 class="small text-muted mb-3">Mapeamento (Campo = Valor ou {{VAR}})</h6>
+                                        <h6 class="small text-muted mb-3">Mapeamento</h6>
                                         <div v-for="(val, field) in step.mapping" :key="field" class="mb-2 row g-1 align-items-center">
                                             <div class="col-4 text-end pe-2 small text-truncate text-light" :title="field">{{ field }}:</div>
                                             <div class="col-7">
-                                                <input type="text" class="form-control form-control-sm bg-black text-light border-secondary" v-model="step.mapping[field]" placeholder="Valor">
+                                                <input type="text" class="form-control form-control-sm bg-black text-light border-secondary" 
+                                                    v-model="step.mapping[field]" 
+                                                    @contextmenu="showCtxMenu($event, 'mapping', step, field)"
+                                                    placeholder="Valor">
                                             </div>
                                             <div class="col-1">
                                                 <button class="btn btn-sm text-danger" @click="delete step.mapping[field]">×</button>
@@ -254,8 +272,11 @@
 
                                 <div v-if="step.operation === 'select'">
                                     <label class="form-label">Query SQL</label>
-                                    <textarea class="form-control bg-dark text-light font-monospace" rows="4" v-model="step.sql" placeholder="SELECT * FROM TGFPAR WHERE..."></textarea>
-                                    <small class="text-muted">Use {{VARIAVEL}} para injetar valores na query.</small>
+                                    <textarea class="form-control bg-dark text-light font-monospace" rows="4" 
+                                        v-model="step.sql" 
+                                        @contextmenu="showCtxMenu($event, 'sql', step)"
+                                        placeholder="SELECT * FROM TGFPAR WHERE..."></textarea>
+                                    <small class="text-muted">Use {{VARIAVEL}} na query.</small>
                                 </div>
                             </div>
 
@@ -282,6 +303,23 @@
                         <button type="button" class="btn btn-primary" @click="confirmExtraction">{{ t.modal.btn_save }}</button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div v-if="ctxMenu.visible" class="context-menu" :style="{top: ctxMenu.y + 'px', left: ctxMenu.x + 'px'}">
+            <div class="context-menu-item" @click="handleCtxAction('copy')">
+                <i class="fas fa-copy me-2"></i> {{ t.context_menu.copy }}
+            </div>
+            <div class="context-menu-item" @click="handleCtxAction('paste')">
+                <i class="fas fa-paste me-2"></i> {{ t.context_menu.paste }}
+            </div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-header">{{ t.context_menu.insert_var }}</div>
+            <div v-if="availableVariables.length === 0" class="context-menu-item text-muted" style="cursor: default;">
+                <small>{{ t.context_menu.no_vars }}</small>
+            </div>
+            <div v-for="v in availableVariables" :key="v" class="context-menu-item" @click="handleCtxAction('insert_var', v)">
+                <span class="badge bg-info text-dark me-2">{{ v }}</span>
             </div>
         </div>
 
