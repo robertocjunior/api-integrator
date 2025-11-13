@@ -2,7 +2,12 @@ export default {
     template: `
     <div class="json-tree ps-3">
         <div v-for="(val, key) in data" :key="key">
-            <span class="json-key" @click.stop="handleClick(key, val)">"{{ key }}"</span>: 
+            <span class="json-key" 
+                  :class="{ 'text-decoration-underline': isArray(val) || !isObject(val) }"
+                  style="cursor: pointer;"
+                  @click.stop="handleClick(key, val)">
+                "{{ key }}"
+            </span>: 
             
             <span v-if="isObject(val)">
                 <span v-if="isArray(val)">[ <br>
@@ -19,7 +24,7 @@ export default {
         </div>
     </div>
     `,
-    name: 'JsonTree', // Importante para recursividade
+    name: 'JsonTree',
     props: ['data', 'path'],
     emits: ['select-path'],
     methods: {
@@ -32,9 +37,13 @@ export default {
             return prefix + key;
         },
         handleClick(key, val) {
-            if (!this.isObject(val)) {
+            // ALTERAÇÃO AQUI: Permite clicar se NÃO for objeto OU se for um Array (Lista)
+            if (!this.isObject(val) || this.isArray(val)) {
+                // Se for array, passamos o caminho sem índice (ex: rows)
+                // Se for valor, o caminho já veio construído
                 const fullPath = this.buildPath(key);
-                // Emite para o componente pai (passando valor junto com o caminho)
+                
+                // Se clicou num array, envia o array inteiro como valor
                 this.$emit('select-path', fullPath, val);
             }
         }

@@ -287,18 +287,49 @@
                                         </div>
 
                                         <div v-if="op.type === 'map'">
-                                            <div class="d-flex gap-2 mb-1" v-for="(to, from) in op.map" :key="from">
-                                                <input type="text" class="form-control form-control-sm bg-dark text-warning" :value="from" readonly style="width: 45%">
-                                                <i class="fas fa-arrow-right align-self-center text-muted"></i>
-                                                <input type="text" class="form-control form-control-sm bg-dark text-success" v-model="op.map[from]" style="width: 45%">
-                                                <button class="btn btn-sm text-danger" @click="delete op.map[from]"><i class="fas fa-times"></i></button>
+                                            <div class="d-flex gap-2 mb-2">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" :name="'maptype'+i" value="manual" v-model="op.mapSource">
+                                                    <label class="form-check-label text-light small">Manual</label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" :name="'maptype'+i" value="list" v-model="op.mapSource">
+                                                    <label class="form-check-label text-light small">Dinâmico (Lista)</label>
+                                                </div>
                                             </div>
-                                            <div class="input-group input-group-sm mb-2">
-                                                <input type="text" class="form-control bg-dark text-light" placeholder="Recebe" v-model="op.tempFrom">
-                                                <input type="text" class="form-control bg-dark text-light" placeholder="Vira" v-model="op.tempTo">
-                                                <button class="btn btn-outline-secondary" @click="if(op.tempFrom){ op.map[op.tempFrom] = op.tempTo; op.tempFrom=''; op.tempTo=''; }">Adicionar</button>
+
+                                            <div v-if="op.mapSource === 'list'">
+                                                <div class="mb-2">
+                                                    <label class="form-label small text-muted">Variável da Lista (Array)</label>
+                                                    <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.listVar" placeholder="{{LISTA_VEICULOS}}" @contextmenu="showCtxMenu($event, 'op-listvar', op)">
+                                                </div>
+                                                <div class="row g-2 mb-2">
+                                                    <div class="col-6">
+                                                        <label class="form-label small text-muted">Campo Chave (Busca)</label>
+                                                        <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.keyField" placeholder="Ex: PLACA">
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <label class="form-label small text-muted">Campo Valor (Retorno)</label>
+                                                        <input type="text" class="form-control form-control-sm bg-dark text-light border-secondary" v-model="op.valueField" placeholder="Ex: CODVEICULO">
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <input type="text" class="form-control form-control-sm bg-dark text-light mt-1" v-model="op.mapDefault" placeholder="Valor Padrão">
+
+                                            <div v-else>
+                                                <div class="d-flex gap-2 mb-1" v-for="(to, from) in op.map" :key="from">
+                                                    <input type="text" class="form-control form-control-sm bg-dark text-warning" :value="from" readonly style="width: 45%">
+                                                    <i class="fas fa-arrow-right align-self-center text-muted"></i>
+                                                    <input type="text" class="form-control form-control-sm bg-dark text-success" v-model="op.map[from]" style="width: 45%">
+                                                    <button class="btn btn-sm text-danger" @click="delete op.map[from]"><i class="fas fa-times"></i></button>
+                                                </div>
+                                                <div class="input-group input-group-sm mb-2">
+                                                    <input type="text" class="form-control bg-dark text-light" placeholder="Recebe" v-model="op.tempFrom">
+                                                    <input type="text" class="form-control bg-dark text-light" placeholder="Vira" v-model="op.tempTo">
+                                                    <button class="btn btn-outline-secondary" @click="if(op.tempFrom){ op.map[op.tempFrom] = op.tempTo; op.tempFrom=''; op.tempTo=''; }">Adicionar</button>
+                                                </div>
+                                            </div>
+                                            
+                                            <input type="text" class="form-control form-control-sm bg-dark text-light mt-1" v-model="op.mapDefault" placeholder="Valor Padrão (Caso não encontre)">
                                         </div>
 
                                         <div v-if="op.type === 'format'">
@@ -372,11 +403,36 @@
 
                                 <div v-if="step.operation === 'select'">
                                     <label class="form-label">Query SQL</label>
-                                    <textarea class="form-control bg-dark text-light font-monospace" rows="4" 
+                                    <textarea class="form-control bg-dark text-light font-monospace mb-3" rows="4" 
                                         v-model="step.sql" 
                                         @contextmenu="showCtxMenu($event, 'sql', step)"
                                         placeholder="SELECT * FROM TGFPAR WHERE..."></textarea>
-                                    <small class="text-muted">Use {{VARIAVEL}} na query.</small>
+                                    
+                                    <div class="d-flex gap-2 mb-3">
+                                        <button class="btn btn-success btn-sm" @click="runTest(step)">
+                                            <i class="fas fa-play me-1"></i> Testar Query
+                                        </button>
+                                        <div v-if="step.testLoading" class="spinner-border spinner-border-sm text-light"></div>
+                                        <small class="text-muted align-self-center ms-2">Use {{VARIAVEL}} na query.</small>
+                                    </div>
+
+                                    <div v-if="step.extracts && step.extracts.length > 0" class="mb-2">
+                                        <h6>{{ t.block.saved_vars }}</h6>
+                                        <div v-for="(ext, i) in step.extracts" :key="i" class="d-flex align-items-center bg-dark border border-secondary p-1 rounded mb-1">
+                                            <span v-if="ext.isList" class="badge bg-warning text-dark me-2" title="Lista (Array)">[ ]</span>
+                                            <span class="var-badge">{{ ext.variableName }}</span>
+                                            <small class="text-muted me-auto">← {{ ext.path }}</small>
+                                            <button class="btn btn-sm text-danger" @click="step.extracts.splice(i, 1)">×</button>
+                                        </div>
+                                    </div>
+
+                                    <div v-if="step.lastResponse" class="border border-secondary rounded p-2 bg-black mt-2">
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span class="badge bg-secondary">Resultado</span>
+                                            <small class="text-info">{{ t.block.click_to_save }}</small>
+                                        </div>
+                                        <json-tree :data="step.lastResponse.data" path="" @select-path="(path, val) => addExtraction(step, path, val)"></json-tree>
+                                    </div>
                                 </div>
                             </div>
 

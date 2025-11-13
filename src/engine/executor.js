@@ -103,13 +103,35 @@ export function processManipulationStep(step, context) {
                         break;
                     
                     case 'map':
-                        // De/Para (ex: "true" -> "S")
-                        // Converte para string para garantir chaveamento
-                        const key = String(processed);
-                        if (op.map && op.map[key] !== undefined) {
-                            processed = op.map[key];
-                        } else if (op.mapDefault !== undefined && op.mapDefault !== '') {
-                            processed = op.mapDefault;
+                        if (op.mapSource === 'list') {
+                            // Mapeamento Dinâmico via Lista (Array de Objetos)
+                            const list = resolveVariables(op.listVar, context);
+                            let foundVal = undefined;
+
+                            if (Array.isArray(list)) {
+                                // Busca item onde item[keyField] == input
+                                // Compara como string para flexibilidade
+                                const targetKey = String(processed);
+                                const match = list.find(item => String(item[op.keyField]) === targetKey);
+                                
+                                if (match) {
+                                    foundVal = match[op.valueField];
+                                }
+                            }
+
+                            if (foundVal !== undefined) {
+                                processed = foundVal;
+                            } else if (op.mapDefault !== undefined && op.mapDefault !== '') {
+                                processed = op.mapDefault;
+                            }
+                        } else {
+                            // Mapeamento Manual (De/Para Fixo)
+                            const key = String(processed);
+                            if (op.map && op.map[key] !== undefined) {
+                                processed = op.map[key];
+                            } else if (op.mapDefault !== undefined && op.mapDefault !== '') {
+                                processed = op.mapDefault;
+                            }
                         }
                         break;
 
@@ -242,10 +264,38 @@ export async function executeFlow(flow, io) {
                     await executeSankhyaRequest('DatasetSP.save', requestBody);
                 } else if (step.operation === 'select') {
                     const resolvedSql = resolveVariables(step.sql, context);
-                    await executeSankhyaRequest('DbExplorerSP.executeQuery', {
+                    const res = await executeSankhyaRequest('DbExplorerSP.executeQuery', {
                         sql: resolvedSql,
                         params: {}
                     });
+
+                    // EXTRAÇÃO DE VARIÁVEIS DO SANKHYA
+                    if (step.extracts && Array.isArray(step.extracts)) {
+                        const dataToExtract = res.responseBody;
+                        step.extracts.forEach(ext => {
+                            const rawVal = _.get(dataToExtract, ext.path);
+                            if (ext.isList) {
+                                if (Array.isArray(rawVal)) {
+                                    context[ext.variableName] = rawVal;
+                                } else {
+                                    const arrayPathMatch = ext.path.match(/^(.*)\[\d+\](\..+)?$/);
+                                    if (arrayPathMatch) {
+                                        const rootArray = _.get(dataToExtract, arrayPathMatch[1]);
+                                        const prop = arrayPathMatch[2] ? arrayPathMatch[2].substring(1) : null;
+                                        if (Array.isArray(rootArray)) {
+                                            context[ext.variableName] = prop ? rootArray.map(i => _.get(i, prop)) : rootArray;
+                                        } else {
+                                            context[ext.variableName] = [rawVal];
+                                        }
+                                    } else {
+                                        context[ext.variableName] = [rawVal];
+                                    }
+                                }
+                            } else {
+                                if (rawVal !== undefined) context[ext.variableName] = rawVal;
+                            }
+                        });
+                    }
                 }
             }
         }

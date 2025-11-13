@@ -80,6 +80,12 @@ createApp({
                                 if (!step.timeoutUnit) step.timeoutUnit = (step.timeout >= 60000 && step.timeout % 60000 === 0) ? 60000 : 1000;
                                 if (step.bodyEnabled === undefined) step.bodyEnabled = (step.method !== 'GET' && step.method !== 'HEAD');
                             }
+                            // Garante inicialização do modo de mapa para fluxos antigos
+                            if (step.type === 'manipulation' && step.operations) {
+                                step.operations.forEach(op => {
+                                    if (op.type === 'map' && !op.mapSource) op.mapSource = 'manual';
+                                });
+                            }
                         });
                     }
                 });
@@ -155,6 +161,8 @@ createApp({
                 outputVar: '',
                 find: '', replace: '',
                 map: {}, mapDefault: '',
+                mapSource: 'manual', // Novo padrão
+                listVar: '', keyField: '', valueField: '', // Novos campos
                 formatType: 'upper',
                 formula: ''
             });
@@ -241,6 +249,7 @@ createApp({
             else if (type === 'sql') step.sql = val;
             else if (type === 'mapping') step.mapping[key] = val;
             else if (type === 'op-input') step.input = val;
+            else if (type === 'op-listvar') step.listVar = val; // Adicionado
         }
     }
 }).mount('#app');
