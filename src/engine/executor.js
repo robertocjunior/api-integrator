@@ -1,9 +1,8 @@
 import axios from 'axios';
 import _ from 'lodash';
+import { executeSankhyaRequest } from '../services/sankhyaService.js'; // IMPORTAR
 
-/**
- * Substitui {{VARIAVEL}} pelo valor real do contexto
- */
+// ... (função resolveVariables mantida igual) ...
 export function resolveVariables(target, context) {
     if (typeof target === 'string') {
         return target.replace(/\{\{([\w_]+)\}\}/g, (_, key) => {
@@ -23,9 +22,6 @@ export function resolveVariables(target, context) {
     return target;
 }
 
-/**
- * Executa um único fluxo passo a passo
- */
 export async function executeFlow(flow, io) {
     const context = {}; 
     const logPrefix = `[${flow.name}]`;
@@ -38,30 +34,60 @@ export async function executeFlow(flow, io) {
             io.emit('flow-status', { id: flow.id, status: 'running', step: step.id });
 
             if (step.type === 'request') {
-                // 1. Resolver Variáveis
-                const config = resolveVariables({
+                // ... (Lógica existente de request) ...
+                // Copie a lógica anterior aqui para manter funcionando
+                 const config = resolveVariables({
                     method: step.method,
                     url: step.url,
                     headers: step.headers || {},
                     data: step.body || null
                 }, context);
-
-                // 2. Request
                 const response = await axios({ ...config, timeout: 30000 });
-                
-                // 3. Extrair Variáveis
                 if (step.extracts && Array.isArray(step.extracts)) {
                     step.extracts.forEach(ext => {
                         const val = _.get(response.data, ext.path);
-                        if (val !== undefined) {
-                            context[ext.variableName] = val;
-                        }
+                        if (val !== undefined) context[ext.variableName] = val;
                     });
                 }
             } 
             else if (step.type === 'wait') {
                 const ms = parseInt(step.delay) || 1000;
                 await new Promise(resolve => setTimeout(resolve, ms));
+            }
+            // --- NOVO BLOCO: SANKHYA ---
+            else if (step.type === 'sankhya') {
+                console.log(`${logPrefix} Executando Sankhya: ${step.operation}`);
+                
+                if (step.operation === 'insert') {
+                    // 1. Resolver as variáveis no mapeamento
+                    const resolvedMapping = resolveVariables(step.mapping, context);
+                    
+                    // 2. Preparar vetores para o DatasetSP.save
+                    // O Sankhya exige: fields: ["NOME", "IDADE"] e values: {"0": "Joao", "1": "30"}
+                    const fieldNames = Object.keys(resolvedMapping);
+                    const valuesObj = {};
+                    
+                    fieldNames.forEach((fieldName, index) => {
+                        valuesObj[index.toString()] = resolvedMapping[fieldName];
+                    });
+
+                    const requestBody = {
+                        dataSetID: step.datasetId, // Ex: "01S"
+                        entityName: step.tableName, // Ex: "AD_LOCATCAR"
+                        standAlone: false,
+                        fields: fieldNames,
+                        records: [{ values: valuesObj }]
+                    };
+
+                    await executeSankhyaRequest('DatasetSP.save', requestBody);
+                }
+                else if (step.operation === 'select') {
+                    const resolvedSql = resolveVariables(step.sql, context);
+                    await executeSankhyaRequest('DbExplorerSP.executeQuery', {
+                        sql: resolvedSql,
+                        params: {}
+                    });
+                }
             }
         }
 

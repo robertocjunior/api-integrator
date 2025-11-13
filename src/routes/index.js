@@ -10,4 +10,10 @@ router.post('/flows', FlowController.saveFlows);
 // Rota de Teste (Proxy)
 router.post('/test-step', FlowController.testStep);
 
+// ...
+// Rotas ERP Sankhya
+router.get('/config/sankhya', FlowController.getErpConfig);
+router.post('/config/sankhya', FlowController.saveErpConfig);
+router.get('/sankhya/columns', FlowController.getTableColumns);
+
 export default router;

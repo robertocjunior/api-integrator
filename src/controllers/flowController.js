@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { loadFlowsFromFile, saveFlowsToFile, restartScheduler } from '../engine/scheduler.js';
+import { getSankhyaConfig, saveSankhyaConfig, getTableMetadata } from '../services/sankhyaService.js';
 import { resolveVariables } from '../engine/executor.js';
 
 export const getFlows = (req, res) => {
@@ -42,5 +43,25 @@ export const testStep = async (req, res) => {
             error: error.message,
             data: error.response?.data
         });
+    }
+};
+
+export const getErpConfig = (req, res) => {
+    res.json(getSankhyaConfig());
+};
+
+export const saveErpConfig = (req, res) => {
+    saveSankhyaConfig(req.body);
+    res.json({ success: true });
+};
+
+// Metadados (Colunas)
+export const getTableColumns = async (req, res) => {
+    try {
+        const { tableName } = req.query;
+        const columns = await getTableMetadata(tableName);
+        res.json(columns);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };

@@ -1,3 +1,5 @@
+[v-cloak] { display: none !important; }
+
 :root { --bg-dark: #0d1117; --card-bg: #161b22; --border: #30363d; --accent: #238636; }
 body { background-color: var(--bg-dark); color: #c9d1d9; font-family: 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
 

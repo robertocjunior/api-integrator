@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hub Integrador Visual</title>
+    <title>Hub Integrador</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/styles.css">
@@ -12,8 +12,280 @@
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <div id="app" class="app-container">
+    <div id="app" class="app-container" v-cloak>
+        
+        <div class="sidebar p-3 d-flex flex-column">
+            <h5 class="mb-4 text-white">
+                <i class="fas fa-project-diagram me-2"></i>{{ t.app_title }}
+            </h5>
+
+            <div class="btn-group w-100 mb-3">
+                <button class="btn btn-sm btn-outline-secondary" :class="{active: view === 'editor'}" @click="view = 'editor'">
+                    <i class="fas fa-edit"></i> Editor
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" :class="{active: view === 'settings'}" @click="view = 'settings'">
+                    <i class="fas fa-cog"></i> Configs
+                </button>
+            </div>
+
+            <hr class="border-secondary my-2">
+
+            <div v-if="view === 'editor'" class="d-flex flex-column flex-grow-1 overflow-hidden">
+                <button class="btn btn-outline-success w-100 mb-3" @click="addNewFlow">
+                    {{ t.sidebar.new_flow }}
+                </button>
+                
+                <div class="list-group overflow-auto flex-grow-1">
+                    <button v-for="(flow, idx) in flows" 
+                        class="list-group-item list-group-item-action bg-transparent text-light border-secondary"
+                        :class="{active: currentFlowIndex === idx}"
+                        @click="selectFlow(idx)">
+                        <div class="d-flex w-100 justify-content-between">
+                            <span class="fw-bold text-truncate">{{ flow.name }}</span>
+                            <span v-if="flowStatus[flow.id]?.status === 'running'" class="spinner-grow spinner-grow-sm text-success"></span>
+                        </div>
+                        <small class="text-muted">{{ Math.round(flow.interval/1000) }}s</small>
+                    </button>
+                </div>
+                
+                <button class="btn btn-primary w-100 mt-3" @click="saveAll" :disabled="saving">
+                    <i class="fas fa-save me-2"></i>
+                    {{ saving ? t.sidebar.saving : t.sidebar.save_all }}
+                </button>
+            </div>
+
+            <div v-if="view === 'settings'" class="text-muted small mt-2">
+                Configure as credenciais do ERP Sankhya aqui para usar nos blocos de integração.
+            </div>
         </div>
+
+        <div class="main-content p-4" v-if="view === 'settings'">
+            <div class="card bg-dark border-secondary" style="max-width: 600px; margin: 0 auto;">
+                <div class="card-header border-secondary">
+                    <h5 class="mb-0"><i class="fas fa-database me-2"></i>Configuração ERP Sankhya</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i> Estas credenciais são usadas para buscar metadados e autenticar as requisições dos blocos Sankhya.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">URL Base</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary" v-model="erpConfig.baseUrl" placeholder="ex: http://sankhya.meudominio.com.br">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Usuário (NOMUSU)</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary" v-model="erpConfig.user">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Senha (INTERNO)</label>
+                        <input type="password" class="form-control bg-black text-light border-secondary" v-model="erpConfig.password">
+                    </div>
+                    <button class="btn btn-success w-100" @click="saveErpConfig">Salvar Configurações</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content" v-if="view === 'editor' && currentFlow">
+            
+            <div class="p-3 bg-dark border-bottom border-secondary d-flex align-items-center gap-3">
+                <input type="text" class="form-control bg-dark text-white border-secondary w-auto fw-bold" v-model="currentFlow.name">
+                
+                <div class="form-check form-switch text-light">
+                    <input class="form-check-input" type="checkbox" v-model="currentFlow.enabled">
+                    <label class="form-check-label">{{ t.toolbar.active }}</label>
+                </div>
+
+                <div class="input-group w-auto">
+                    <span class="input-group-text bg-dark text-light border-secondary" :title="t.toolbar.interval_title">
+                        <i class="fas fa-clock"></i>
+                    </span>
+                    <input type="number" class="form-control bg-dark text-light border-secondary fw-bold" style="width: 80px" v-model="displayInterval">
+                    <select class="form-select bg-dark text-light border-secondary" style="width: 80px" v-model="intervalUnit">
+                        <option :value="1000">{{ t.sidebar.unit_sec }}</option>
+                        <option :value="60000">{{ t.sidebar.unit_min }}</option>
+                    </select>
+                </div>
+
+                <div class="ms-auto">
+                    <div class="dropdown">
+                        <button class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            {{ t.toolbar.add_block }}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-dark">
+                            <li><a class="dropdown-item" href="#" @click="addStep('request')"><i class="fas fa-globe me-2"></i>{{ t.toolbar.req_http }}</a></li>
+                            <li><a class="dropdown-item" href="#" @click="addStep('sankhya')"><i class="fas fa-database me-2"></i>Integração Sankhya</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" @click="addStep('wait')"><i class="fas fa-clock me-2"></i>{{ t.toolbar.wait }}</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow-canvas">
+                <div v-if="currentFlow.steps.length === 0" class="text-muted mt-5">
+                    {{ t.canvas.empty }}
+                </div>
+
+                <div v-for="(step, idx) in currentFlow.steps" :key="step.id" class="w-100 d-flex flex-column align-items-center">
+                    
+                    <div v-if="idx > 0" class="connector"></div>
+
+                    <div class="step-card" :class="{active: activeStepId === step.id}" @click="activeStepId = step.id">
+                        
+                        <div class="step-header">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge" :class="getStepColor(step.type)">{{ step.type.toUpperCase() }}</span>
+                                <span class="fw-bold">{{ step.name }}</span>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-dark border-0" @click.stop="moveStep(idx, -1)" :disabled="idx === 0">▲</button>
+                                <button class="btn btn-sm btn-dark border-0" @click.stop="moveStep(idx, 1)" :disabled="idx === currentFlow.steps.length - 1">▼</button>
+                                <button class="btn btn-sm btn-outline-danger border-0" @click.stop="removeStep(idx)">×</button>
+                            </div>
+                        </div>
+
+                        <div class="step-body" @click.stop>
+                            
+                            <div v-if="step.type === 'wait'">
+                                <label class="form-label">{{ t.block.wait_label }}</label>
+                                <input type="number" class="form-control bg-dark text-light" v-model="step.delay">
+                            </div>
+
+                            <div v-if="step.type === 'request'">
+                                <input type="text" class="form-control bg-dark text-light mb-2" v-model="step.name" :placeholder="t.block.name_placeholder">
+                                
+                                <div class="input-group mb-2">
+                                    <select class="form-select bg-dark text-light" style="max-width: 100px" v-model="step.method">
+                                        <option>GET</option><option>POST</option><option>PUT</option>
+                                    </select>
+                                    <input type="text" class="form-control bg-dark text-light" v-model="step.url" placeholder="https://api...">
+                                </div>
+
+                                <ul class="nav nav-tabs border-secondary mb-2">
+                                    <li class="nav-item"><a class="nav-link active py-1" data-bs-toggle="tab" :href="'#headers-'+step.id">{{ t.block.tab_headers }}</a></li>
+                                    <li class="nav-item"><a class="nav-link py-1" data-bs-toggle="tab" :href="'#body-'+step.id">{{ t.block.tab_body }}</a></li>
+                                    <li class="nav-item"><a class="nav-link py-1" data-bs-toggle="tab" :href="'#extract-'+step.id">{{ t.block.tab_vars }}</a></li>
+                                </ul>
+
+                                <div class="tab-content">
+                                    <div class="tab-pane active" :id="'headers-'+step.id">
+                                        <div v-for="(val, key) in step.headers" :key="key" class="input-group input-group-sm mb-1">
+                                            <input type="text" class="form-control bg-dark text-light" :value="key" @change="updateHeaderKey(step, key, $event.target.value)">
+                                            <input type="text" class="form-control bg-dark text-light" v-model="step.headers[key]">
+                                            <button class="btn btn-outline-danger" @click="deleteHeader(step, key)">×</button>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-secondary" @click="addHeader(step)">{{ t.block.btn_add_header }}</button>
+                                    </div>
+
+                                    <div class="tab-pane" :id="'body-'+step.id">
+                                        <textarea class="form-control bg-dark text-light font-monospace" rows="4" 
+                                            :value="JSON.stringify(step.body, null, 2)"
+                                            @input="updateBody(step, $event.target.value)"></textarea>
+                                    </div>
+
+                                    <div class="tab-pane" :id="'extract-'+step.id">
+                                        <p class="small text-muted mb-2">{{ t.block.helper_vars }}</p>
+                                        
+                                        <div class="d-flex gap-2 mb-3">
+                                            <button class="btn btn-success btn-sm" @click="runTest(step)">
+                                                <i class="fas fa-play me-1"></i> {{ t.block.btn_test }}
+                                            </button>
+                                            <div v-if="step.testLoading" class="spinner-border spinner-border-sm text-light"></div>
+                                        </div>
+
+                                        <div v-if="step.extracts && step.extracts.length > 0" class="mb-2">
+                                            <h6>{{ t.block.saved_vars }}</h6>
+                                            <div v-for="(ext, i) in step.extracts" :key="i" class="d-flex align-items-center bg-dark border border-secondary p-1 rounded mb-1">
+                                                <span class="var-badge">{{ ext.variableName }}</span>
+                                                <small class="text-muted me-auto">← {{ ext.path }}</small>
+                                                <button class="btn btn-sm text-danger" @click="step.extracts.splice(i, 1)">×</button>
+                                            </div>
+                                        </div>
+
+                                        <div v-if="step.lastResponse" class="border border-secondary rounded p-2 bg-black">
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="badge bg-secondary">Status: {{ step.lastResponse.status }}</span>
+                                                <small class="text-info">{{ t.block.click_to_save }}</small>
+                                            </div>
+                                            <json-tree :data="step.lastResponse.data" path="" @select-path="(path, val) => addExtraction(step, path, val)"></json-tree>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="step.type === 'sankhya'">
+                                <div class="mb-3">
+                                    <label class="form-label text-info">Operação</label>
+                                    <select class="form-select bg-dark text-light" v-model="step.operation">
+                                        <option value="insert">Inserir Registro (Insert)</option>
+                                        <option value="select">Consulta SQL (Select)</option>
+                                    </select>
+                                </div>
+
+                                <div v-if="step.operation === 'insert'">
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-8">
+                                            <label class="form-label small">Tabela</label>
+                                            <input type="text" class="form-control bg-dark text-light" v-model="step.tableName" placeholder="ex: AD_LOCATCAR">
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small">Dataset</label>
+                                            <input type="text" class="form-control bg-dark text-light" v-model="step.datasetId" placeholder="ex: 01S">
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="btn btn-outline-info btn-sm w-100 mb-3" @click="loadSankhyaColumns(step)">
+                                        <i class="fas fa-sync me-2"></i> Carregar Campos do ERP
+                                    </button>
+
+                                    <div v-if="step.mapping && Object.keys(step.mapping).length > 0" class="border border-secondary rounded p-2">
+                                        <h6 class="small text-muted mb-3">Mapeamento (Campo = Valor ou {{VAR}})</h6>
+                                        <div v-for="(val, field) in step.mapping" :key="field" class="mb-2 row g-1 align-items-center">
+                                            <div class="col-4 text-end pe-2 small text-truncate text-light" :title="field">{{ field }}:</div>
+                                            <div class="col-7">
+                                                <input type="text" class="form-control form-control-sm bg-black text-light border-secondary" v-model="step.mapping[field]" placeholder="Valor">
+                                            </div>
+                                            <div class="col-1">
+                                                <button class="btn btn-sm text-danger" @click="delete step.mapping[field]">×</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div v-if="step.operation === 'select'">
+                                    <label class="form-label">Query SQL</label>
+                                    <textarea class="form-control bg-dark text-light font-monospace" rows="4" v-model="step.sql" placeholder="SELECT * FROM TGFPAR WHERE..."></textarea>
+                                    <small class="text-muted">Use {{VARIAVEL}} para injetar valores na query.</small>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="varModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content bg-dark text-light border-secondary">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">{{ t.modal.title }}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>{{ t.modal.selected_value }} <code class="text-info">{{ tempVarValue }}</code></p>
+                        <p class="small text-muted">{{ t.modal.path }} {{ tempVarPath }}</p>
+                        <label class="form-label">{{ t.modal.label_name }}</label>
+                        <input type="text" class="form-control bg-black text-light border-secondary text-uppercase" v-model="tempVarName" :placeholder="t.modal.placeholder_name">
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-primary" @click="confirmExtraction">{{ t.modal.btn_save }}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
 
     <script type="module" src="js/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
