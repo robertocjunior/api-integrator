@@ -2,7 +2,8 @@ import axios from 'axios';
 import _ from 'lodash';
 import { loadFlowsFromFile, saveFlowsToFile, restartScheduler } from '../engine/scheduler.js';
 import { getSankhyaConfig, saveSankhyaConfig, getTableMetadata, executeSankhyaRequest } from '../services/sankhyaService.js';
-import { processRequestStep, resolveVariables } from '../engine/executor.js';
+// ADICIONE A IMPORTAÇÃO QUE FALTAVA
+import { processRequestStep, processManipulationStep, resolveVariables } from '../engine/executor.js';
 
 // --- CRUD DE FLUXOS ---
 
@@ -22,7 +23,6 @@ export const saveFlows = (req, res) => {
 };
 
 // --- TESTE SEQUENCIAL INTELIGENTE ---
-// Executa o fluxo do início até o passo alvo para garantir que o contexto exista.
 export const testStep = async (req, res) => {
     try {
         const { flow, targetStepId } = req.body;
@@ -33,13 +33,11 @@ export const testStep = async (req, res) => {
         console.log(`[Teste] Iniciando simulação de fluxo para testar passo: ${targetStepId}`);
 
         for (const step of flow.steps) {
-            // Se já passou do alvo, para.
-            if (found) break;
+            if (found) break; // Para quando encontrar o alvo
 
             try {
                 // 1. Executa REQUEST
                 if (step.type === 'request') {
-                    // Se é o alvo, executamos e capturamos a resposta final
                     if (step.id === targetStepId) {
                         const response = await processRequestStep(step, context);
                         targetResponse = {
@@ -48,23 +46,35 @@ export const testStep = async (req, res) => {
                             headers: response.headers
                         };
                         found = true;
-                    } 
-                    // Se é passo anterior, executamos apenas para popular o context (tokens, etc)
-                    else {
+                    } else {
                         console.log(`[Teste] Executando pré-requisito: ${step.name}`);
                         await processRequestStep(step, context);
                     }
                 }
                 
-                // 2. Executa WAIT (Ignoramos delays longos no teste para ser rápido)
+                // 2. Executa MANIPULATION (LÓGICA ADICIONADA)
+                else if (step.type === 'manipulation') {
+                    // Sempre execute manipulação se for um passo anterior
+                    // ou o passo alvo (o teste é só ver se o contexto está ok)
+                    console.log(`[Teste] Executando pré-requisito: ${step.name}`);
+                    processManipulationStep(step, context);
+
+                    if (step.id === targetStepId) {
+                        targetResponse = { status: 200, data: { message: "Manipulação simulada com sucesso", context: context } };
+                        found = true;
+                    }
+                }
+
+                // 3. Executa WAIT
                 else if (step.type === 'wait') {
                     if (step.id === targetStepId) {
                         targetResponse = { status: 200, data: { message: `Delay de ${step.delay}ms simulado com sucesso.` } };
                         found = true;
                     }
+                    // Ignora o delay em pré-requisitos
                 }
 
-                // 3. Executa SANKHYA
+                // 4. Executa SANKHYA
                 else if (step.type === 'sankhya') {
                     if (step.id === targetStepId) {
                         let responseData;
@@ -74,7 +84,6 @@ export const testStep = async (req, res) => {
                             responseData = res.responseBody;
                         } 
                         else {
-                            // Insert (Simulação)
                             const resolvedMapping = resolveVariables(step.mapping, context);
                             responseData = { 
                                 status: "Simulação (Insert)",
@@ -88,13 +97,13 @@ export const testStep = async (req, res) => {
                         found = true;
                     } 
                     else {
-                        // Se for um passo anterior (Dependência), executamos se for SELECT para popular variáveis
+                        // Se for um passo anterior (Dependência), executamos se for SELECT
                         if (step.operation === 'select') {
                             console.log(`[Teste] Executando pré-requisito Sankhya: ${step.name}`);
                             const resolvedSql = resolveVariables(step.sql, context);
                             const res = await executeSankhyaRequest('DbExplorerSP.executeQuery', { sql: resolvedSql, params: {} });
                             
-                            // Extrair variáveis para o contexto (Copiado da lógica do executor)
+                            // Extrair variáveis para o contexto
                             if (step.extracts && Array.isArray(step.extracts)) {
                                 const dataToExtract = res.responseBody;
                                 step.extracts.forEach(ext => {
