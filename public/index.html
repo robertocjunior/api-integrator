@@ -399,6 +399,24 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <div class="mt-3">
+                                        <button class="btn btn-success btn-sm w-100" @click="runTest(step)">
+                                            <i class="fas fa-play me-1"></i> Testar Inserção (Simulação)
+                                        </button>
+                                        
+                                        <div v-if="step.testLoading" class="text-center mt-2">
+                                            <div class="spinner-border spinner-border-sm text-light"></div>
+                                        </div>
+
+                                        <div v-if="step.lastResponse" class="border border-secondary rounded p-2 bg-black mt-2">
+                                            <div class="d-flex justify-content-between mb-2">
+                                                <span class="badge bg-info text-dark">Simulação</span>
+                                                <small class="text-muted">{{ step.lastResponse.message }}</small>
+                                            </div>
+                                            <json-tree :data="step.lastResponse.data" path=""></json-tree>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div v-if="step.operation === 'select'">

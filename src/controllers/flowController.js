@@ -1,4 +1,5 @@
 import axios from 'axios';
+import _ from 'lodash';
 import { loadFlowsFromFile, saveFlowsToFile, restartScheduler } from '../engine/scheduler.js';
 import { getSankhyaConfig, saveSankhyaConfig, getTableMetadata, executeSankhyaRequest } from '../services/sankhyaService.js';
 import { processRequestStep, resolveVariables } from '../engine/executor.js';
@@ -65,7 +66,6 @@ export const testStep = async (req, res) => {
 
                 // 3. Executa SANKHYA
                 else if (step.type === 'sankhya') {
-                    // Implementação similar ao request para popular contexto se necessário
                     if (step.id === targetStepId) {
                         let responseData;
                         if (step.operation === 'select') {
@@ -74,17 +74,54 @@ export const testStep = async (req, res) => {
                             responseData = res.responseBody;
                         } 
                         else {
-                            // Insert não deve ser executado em teste a menos que o usuário saiba o que está fazendo
-                            // Por segurança, apenas validamos as variáveis
+                            // Insert (Simulação)
                             const resolvedMapping = resolveVariables(step.mapping, context);
-                            responseData = { message: "Simulação de Insert (não executado para evitar lixo)", resolvedData: resolvedMapping };
+                            responseData = { 
+                                status: "Simulação (Insert)",
+                                message: "O registro abaixo SERIA inserido (mas não foi, por segurança).",
+                                entity: step.tableName,
+                                dataset: step.datasetId,
+                                data: resolvedMapping
+                            };
                         }
-                        
                         targetResponse = { status: 200, data: responseData };
                         found = true;
                     } 
                     else {
-                        // Se for um passo anterior de select, poderia extrair variaveis (futuro)
+                        // Se for um passo anterior (Dependência), executamos se for SELECT para popular variáveis
+                        if (step.operation === 'select') {
+                            console.log(`[Teste] Executando pré-requisito Sankhya: ${step.name}`);
+                            const resolvedSql = resolveVariables(step.sql, context);
+                            const res = await executeSankhyaRequest('DbExplorerSP.executeQuery', { sql: resolvedSql, params: {} });
+                            
+                            // Extrair variáveis para o contexto (Copiado da lógica do executor)
+                            if (step.extracts && Array.isArray(step.extracts)) {
+                                const dataToExtract = res.responseBody;
+                                step.extracts.forEach(ext => {
+                                    const rawVal = _.get(dataToExtract, ext.path);
+                                    if (ext.isList) {
+                                        if (Array.isArray(rawVal)) {
+                                            context[ext.variableName] = rawVal;
+                                        } else {
+                                            const arrayPathMatch = ext.path.match(/^(.*)\[\d+\](\..+)?$/);
+                                            if (arrayPathMatch) {
+                                                const rootArray = _.get(dataToExtract, arrayPathMatch[1]);
+                                                const prop = arrayPathMatch[2] ? arrayPathMatch[2].substring(1) : null;
+                                                if (Array.isArray(rootArray)) {
+                                                    context[ext.variableName] = prop ? rootArray.map(i => _.get(i, prop)) : rootArray;
+                                                } else {
+                                                    context[ext.variableName] = [rawVal];
+                                                }
+                                            } else {
+                                                context[ext.variableName] = [rawVal];
+                                            }
+                                        }
+                                    } else {
+                                        if (rawVal !== undefined) context[ext.variableName] = rawVal;
+                                    }
+                                });
+                            }
+                        }
                     }
                 }
 
